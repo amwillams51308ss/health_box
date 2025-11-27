@@ -6,13 +6,17 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using uPLibrary.Networking.M2Mqtt;
 using uPLibrary.Networking.M2Mqtt.Messages;
+using UnityEngine.UI;
+using System.Threading.Tasks;
+using TMPro;
+
 
 public class SimpleMQTTUnity : MonoBehaviour
 {
     [Header("MQTT Broker 設定")]
-    [SerializeField] private string brokerIP = "192.168.38.5";
+    [SerializeField] private string brokerIP = "192.168.1.55";
     [SerializeField] private int brokerPort = 1883;
-    [SerializeField] private string subscribeTopic = "M2MQTT_Unity/test";
+    [SerializeField] private string subscribeTopic = "test/humi";
 
     [Header("發送訊息")]
     [SerializeField] private string publishTopic = "M2MQTT_Unity/test";
@@ -24,6 +28,14 @@ public class SimpleMQTTUnity : MonoBehaviour
     [SerializeField] private float reconnectDelaySeconds = 3f; // 重連間隔
     [SerializeField] private int connectTimeoutMs = 3000;      // 逾時（若你的 M2Mqtt 版本支援設定）
     [SerializeField] private bool dontDestroyOnLoad = true;    // 是否跨場景保留
+
+    [Header("連線失敗 UI")]
+    [SerializeField] private GameObject connectErrorPanel; // 指到一個 Panel
+    [SerializeField] private TMP_Text connectErrorText;        // Panel 裡面的 Text
+
+
+    public bool IsConnected => client != null && client.IsConnected;//現在有沒有連上
+    public bool IsConnecting => isConnecting;//正在連線
 
     private MqttClient client;
     private bool isConnecting = false;
@@ -42,7 +54,7 @@ public class SimpleMQTTUnity : MonoBehaviour
 
     void Awake()
     {
-     // 僅保留唯一實例
+        // 僅保留唯一實例
         var existing = FindObjectsOfType<SimpleMQTTUnity>();
         if (existing.Length > 1)
         {
@@ -56,13 +68,17 @@ public class SimpleMQTTUnity : MonoBehaviour
 
 
 
-    // --- 移除 Start() 的自動連線 --- //
-    // void Start() { }  // 不用
+    // --- 確定ERROR panel 不顯示 --- //
+    void Start()
+    {
+        if (connectErrorPanel != null)
+            connectErrorPanel.SetActive(false);
+    }
 
     /// <summary>
     /// 按鈕呼叫：開始連線（並啟動重連循環）
     /// </summary>
-    
+
 
     // 供 UI 呼叫：設定 IP（不立即連線）
     public void SetBrokerIP(string ip)
@@ -97,7 +113,7 @@ public class SimpleMQTTUnity : MonoBehaviour
 
     public void StartConnect()
     {
-    // 先保證物件與腳本啟用
+        // 先保證物件與腳本啟用
         if (!gameObject.activeSelf)
         {
             Debug.LogWarning("MQTT_test 為 Inactive，已自動 SetActive(true)。");
@@ -153,69 +169,98 @@ public class SimpleMQTTUnity : MonoBehaviour
     /// </summary>
     private System.Collections.IEnumerator ConnectLoop()
     {
-        // （選用）設定逾時，如果你的 M2Mqtt 版本支援 MqttSettings：
-        // try { uPLibrary.Networking.M2Mqtt.MqttSettings.Instance.TimeoutOnConnection = connectTimeoutMs; } catch {}
-
         while (wantReconnect)
         {
-            // 未連線才嘗試
+            // 只有未連線時才嘗試
             if (client == null || !client.IsConnected)
             {
                 if (!isConnecting)
                 {
                     isConnecting = true;
 
-                    try
+                    bool success = false;
+                    Exception error = null;
+
+                    // 在背景 Thread 執行 Connect，不要卡住主執行緒
+                    var connectTask = Task.Run(() =>
                     {
-                        client = new MqttClient(brokerIP, brokerPort, false, null, null, MqttSslProtocols.None);
-                        client.MqttMsgPublishReceived += OnMessageReceived;
-                        // 若版本支援可監聽中斷事件：client.ConnectionClosed += OnConnectionClosed;
-
-                        var clientId = Guid.NewGuid().ToString();
-                        client.Connect(clientId); // 同步呼叫，但在協程中，失敗就待會再試
-
-                        if (client.IsConnected)
+                        try
                         {
-                            Debug.Log($"MQTT 已連線：{brokerIP}:{brokerPort}");
-                            client.Subscribe(new[] { subscribeTopic }, new[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
-                            Debug.Log($"已訂閱主題：{subscribeTopic}");
+                            var c = new MqttClient(brokerIP, brokerPort, false, null, null, MqttSslProtocols.None);
+                            c.MqttMsgPublishReceived += OnMessageReceived;
 
-                            // 若不需要持續重連（只連一次），可以把 wantReconnect 設為 false
-                            if (!autoReconnect)
+                            var clientId = Guid.NewGuid().ToString();
+                            c.Connect(clientId);   // 在背景 Thread 裡阻塞沒關係
+
+                            if (c.IsConnected)
                             {
-                                wantReconnect = false;
-                                connectLoopRunning = false;
-                                isConnecting = false;
-                                yield break;
+                                client = c;
+                                success = true;
                             }
                         }
-                        else
+                        catch (Exception ex)
                         {
-                            Debug.LogWarning("MQTT 連線失敗（Connect 返回未連線）。");
+                            error = ex;
+                        }
+                    });
+
+                    // 等候連線完成或逾時（不阻塞 Unity）
+                    float elapsed = 0f;
+                    float timeoutSeconds = connectTimeoutMs / 1000f;
+
+                    while (!connectTask.IsCompleted && elapsed < timeoutSeconds)
+                    {
+                        elapsed += Time.deltaTime;
+                        yield return null; // 讓 Unity 繼續跑
+                    }
+
+                    // 還沒完成 → 當作逾時
+                    if (!connectTask.IsCompleted)
+                    {
+                        ShowConnectError($"MQTT 連線逾時：{brokerIP}:{brokerPort}");
+                        wantReconnect = false;   // 不再重試（或你可以保留要不要）
+                    }
+                    else if (!success)
+                    {
+                        string msg = error != null ? error.Message : "未知原因";
+                        ShowConnectError($"MQTT 連線失敗：{msg}");
+                        if (!autoReconnect)
+                            wantReconnect = false;
+                    }
+                    else
+                    {
+                        Debug.Log($"MQTT 已連線：{brokerIP}:{brokerPort}");
+                        client.Subscribe(
+                            new[] { subscribeTopic },
+                            new[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
+                        Debug.Log($"已訂閱主題：{subscribeTopic}");
+
+                        if (!autoReconnect)
+                        {
+                            wantReconnect = false;
+                            connectLoopRunning = false;
+                            isConnecting = false;
+                            yield break;
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError("MQTT 連線例外：" + ex.Message);
-                    }
-                    finally
-                    {
-                        isConnecting = false;
-                    }
+
+                    isConnecting = false;
                 }
 
-                // 失敗或未連線 → 等待再試
-                yield return new WaitForSeconds(reconnectDelaySeconds);
+                // 等待一下再重試
+                if (wantReconnect)
+                    yield return new WaitForSeconds(reconnectDelaySeconds);
             }
             else
             {
-                // 已連線 → 等待 1 秒後再次檢查（避免 tight loop）
+                // 已連線就只是不時檢查一下
                 yield return new WaitForSeconds(1f);
             }
         }
 
-        connectLoopRunning = false; // 循環結束
+        connectLoopRunning = false;
     }
+
 
     private void OnMessageReceived(object sender, MqttMsgPublishEventArgs e)
     {
@@ -230,6 +275,24 @@ public class SimpleMQTTUnity : MonoBehaviour
             });
         }
     }
+
+    //呼叫 ERROR PANEL
+    private void ShowConnectError(string msg)
+    {
+        Debug.LogError(msg);
+
+        //  遇到錯誤就停掉重連狀態
+        wantReconnect = false;
+        connectLoopRunning = false;
+        isConnecting = false;
+
+        if (connectErrorText != null)
+            connectErrorText.text = msg;
+
+        if (connectErrorPanel != null)
+            connectErrorPanel.SetActive(true);
+    }
+
 
     void Update()
     {

@@ -19,7 +19,7 @@ public class SimpleMQTTUnity : MonoBehaviour
     [SerializeField] private string subscribeTopic = "test/humi";
 
     [Header("發送訊息")]
-    [SerializeField] private string publishTopic = "M2MQTT_Unity/test";
+    [SerializeField] private string publishTopic = "test/hello";
     [SerializeField] private string messageToSend = "Hello from Unity!";
     [SerializeField] private bool sendMessage = false;
 
@@ -33,6 +33,9 @@ public class SimpleMQTTUnity : MonoBehaviour
     [SerializeField] private GameObject connectErrorPanel; // 指到一個 Panel
     [SerializeField] private TMP_Text connectErrorText;        // Panel 裡面的 Text
 
+    // 訂閱中的 topic 集合（不重複）
+    private HashSet<string> subscribedTopics = new HashSet<string>();
+    public IReadOnlyCollection<string> SubscribedTopics => subscribedTopics;
 
     public bool IsConnected => client != null && client.IsConnected;//現在有沒有連上
     public bool IsConnecting => isConnecting;//正在連線
@@ -109,6 +112,69 @@ public class SimpleMQTTUnity : MonoBehaviour
     //getbrokerstate
     public string GetBrokerIP() => brokerIP;
     public int GetBrokerPort() => brokerPort;
+
+    //新增topic
+    public void SubscribeTopic(string topic)
+    {
+        if (string.IsNullOrWhiteSpace(topic))
+            return;
+
+        topic = topic.Trim();
+
+        // 已經有就不用再加
+        if (!subscribedTopics.Add(topic))
+            return;
+
+        // 如果已經連上 broker，就真的送 subscribe
+        if (client != null && client.IsConnected)
+        {
+            client.Subscribe(
+                new[] { topic },
+                new[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
+
+            Debug.Log($"已訂閱 Topic: {topic}");
+        }
+    }
+    //移除topic
+    public void UnsubscribeTopic(string topic)
+    {
+        if (string.IsNullOrWhiteSpace(topic))
+            return;
+
+        topic = topic.Trim();
+
+        if (!subscribedTopics.Remove(topic))
+            return;
+
+        if (client != null && client.IsConnected)
+        {
+            client.Unsubscribe(new[] { topic });
+            Debug.Log($"已取消訂閱 Topic: {topic}");
+        }
+    }
+    //重新訂閱
+    private void ResubscribeAllTopics()
+    {
+        if (client == null || !client.IsConnected)
+            return;
+
+        // 如果集合是空的，至少加上 Inspector 裡設定的預設 topic
+        if (subscribedTopics.Count == 0 && !string.IsNullOrWhiteSpace(subscribeTopic))
+        {
+            subscribedTopics.Add(subscribeTopic.Trim());
+        }
+
+        foreach (var t in subscribedTopics)
+        {
+            if (string.IsNullOrWhiteSpace(t)) continue;
+
+            client.Subscribe(
+                new[] { t },
+                new[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
+
+            Debug.Log($"已訂閱 Topic: {t}");
+        }
+    }
 
 
     public void StartConnect()
@@ -230,10 +296,9 @@ public class SimpleMQTTUnity : MonoBehaviour
                     else
                     {
                         Debug.Log($"MQTT 已連線：{brokerIP}:{brokerPort}");
-                        client.Subscribe(
-                            new[] { subscribeTopic },
-                            new[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
-                        Debug.Log($"已訂閱主題：{subscribeTopic}");
+
+                        // 連線成功後，重新訂閱所有 Topic
+                        ResubscribeAllTopics();
 
                         if (!autoReconnect)
                         {

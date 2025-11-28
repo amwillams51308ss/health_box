@@ -47,6 +47,12 @@ MonoBehaviour:
   brokerIP: 192.168.38.5
   brokerPort: 1883
   subscribeTopic: M2MQTT_Unity/test
-  publishTopic: M2MQTT_Unity/test
+  publishTopic: test/hello
   messageToSend: Hello from Unity!
   sendMessage: 0
+  autoReconnect: 1
+  reconnectDelaySeconds: 3
+  connectTimeoutMs: 3000
+  dontDestroyOnLoad: 1
+  connectErrorPanel: {fileID: 0}
+  connectErrorText: {fileID: 0}

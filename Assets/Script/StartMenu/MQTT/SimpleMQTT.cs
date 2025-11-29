@@ -356,6 +356,7 @@ public class SimpleMQTTUnity : MonoBehaviour
 
         if (connectErrorPanel != null)
             connectErrorPanel.SetActive(true);
+            connectErrorPanel.transform.SetAsLastSibling();
     }
 
 

@@ -114,27 +114,43 @@ public class SimpleMQTTUnity : MonoBehaviour
     public int GetBrokerPort() => brokerPort;
 
     //新增topic
-    public void SubscribeTopic(string topic)
+    public bool SubscribeTopic(string topic)
     {
         if (string.IsNullOrWhiteSpace(topic))
-            return;
+            return false;
 
         topic = topic.Trim();
 
+        if (client == null || !client.IsConnected)
+        {
+            Debug.LogWarning("尚未連線 MQTT，無法訂閱主題。");
+            return false;
+        }
+
         // 已經有就不用再加
         if (!subscribedTopics.Add(topic))
-            return;
+        {
+            Debug.LogWarning($"Topic 已存在：{topic}");
+            return false;
+        }
 
-        // 如果已經連上 broker，就真的送 subscribe
-        if (client != null && client.IsConnected)
+        try
         {
             client.Subscribe(
                 new[] { topic },
                 new[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
 
             Debug.Log($"已訂閱 Topic: {topic}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError("訂閱失敗：" + ex.Message);
+            subscribedTopics.Remove(topic); // 還原
+            return false;
         }
     }
+
     //移除topic
     public void UnsubscribeTopic(string topic)
     {
@@ -356,7 +372,7 @@ public class SimpleMQTTUnity : MonoBehaviour
 
         if (connectErrorPanel != null)
             connectErrorPanel.SetActive(true);
-            connectErrorPanel.transform.SetAsLastSibling();
+        connectErrorPanel.transform.SetAsLastSibling();
     }
 
 

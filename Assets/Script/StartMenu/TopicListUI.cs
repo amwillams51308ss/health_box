@@ -20,20 +20,23 @@ public class TopicListUI : MonoBehaviour
 
     public void OnClickAddTopic()
     {
-        var topic = topicInput.text;
-        if (string.IsNullOrWhiteSpace(topic))
+        var topic = topicInput.text.Trim();
+        if (string.IsNullOrEmpty(topic))
             return;
 
-        topic = topic.Trim();
-
-        // 先請 MQTT 端訂閱
-        mqtt.SubscribeTopic(topic);
-
-        // 再在 UI 上加一條
-        CreateItem(topic);
-
-        topicInput.text = "";
+        if (mqtt.SubscribeTopic(topic))
+        {
+            // ✅ 只有 SubscribeTopic 回傳 true 時才生成 list item
+            CreateItem(topic);
+            topicInput.text = "";
+        }
+        else
+        {
+            Debug.LogWarning("Topic 訂閱未成功，不加入列表。");
+            // 這裡也可以加一個小錯誤文字 UI 提示玩家
+        }
     }
+
 
     private void CreateItem(string topic)
     {

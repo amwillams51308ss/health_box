@@ -45,6 +45,15 @@ public class SimpleMQTTUnity : MonoBehaviour
     private bool connectLoopRunning = false; // 防止重複啟動協程
     private bool wantReconnect = false;      // 由按鈕控制是否啟用重連循環
 
+    // 每個 topic 的最新訊息
+    private Dictionary<string, string> latestByTopic = new Dictionary<string, string>();
+    public string GetLatestMessage(string topic)
+    {
+        if (string.IsNullOrWhiteSpace(topic)) return null;
+        topic = topic.Trim();
+        return latestByTopic.TryGetValue(topic, out var msg) ? msg : null;
+    }
+
     private string latestMessage = "";
     public string LatestMessage => latestMessage;
 
@@ -345,14 +354,23 @@ public class SimpleMQTTUnity : MonoBehaviour
 
     private void OnMessageReceived(object sender, MqttMsgPublishEventArgs e)
     {
+        var topic = e.Topic;
         var msg = Encoding.UTF8.GetString(e.Message);
+
         lock (mainThreadActions)
         {
             mainThreadActions.Enqueue(() =>
             {
+                // 不分 topic 的最後一筆
                 latestMessage = msg;
-                Debug.Log($"收到訊息 [{e.Topic}]: {latestMessage}");
-                OnMessageUpdated?.Invoke(latestMessage);
+
+                // 依 topic 存
+                latestByTopic[topic] = msg;
+
+                Debug.Log($"收到訊息 [{topic}]: {msg}");
+
+                // 如果之後想用事件也可以改成 Action<string,string>
+                OnMessageUpdated?.Invoke(msg);
             });
         }
     }

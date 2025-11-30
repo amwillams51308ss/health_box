@@ -9,20 +9,22 @@ public class GameSceneTopicManager : MonoBehaviour
 
     void Start()
     {
-        // 從 DontDestroyOnLoad 找出 MQTT 物件
-        mqtt = FindObjectOfType<SimpleMQTTUnity>();
+        // 從 DontDestroyOnLoad 找 SimpleMQTTUnity（新版 API）
+        mqtt = FindAnyObjectByType<SimpleMQTTUnity>();
+
         if (mqtt == null)
         {
-            Debug.LogError("GameSceneTopicManager 找不到 SimpleMQTTUnity，確認 MQTT_test 有 DontDestroyOnLoad。");
+            Debug.LogError("找不到 SimpleMQTTUnity！請確認 MQTT_test 有 DontDestroyOnLoad。");
             return;
         }
 
-        // 針對每個已訂閱 topic 生成一張卡片
         foreach (var topic in mqtt.SubscribedTopics)
         {
             CreateCardForTopic(topic);
         }
     }
+
+
 
     private void CreateCardForTopic(string topic)
     {

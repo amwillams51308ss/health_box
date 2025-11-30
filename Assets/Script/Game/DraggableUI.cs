@@ -3,6 +3,9 @@ using UnityEngine.EventSystems;
 
 public class DraggableUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
+    // ★ 全域開關：哪時候允許拖曳
+    public static bool DragEnabled = false;
+
     private RectTransform rectTransform;
     private Canvas canvas;
     private CanvasGroup canvasGroup;
@@ -16,12 +19,20 @@ public class DraggableUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndD
 
     public void OnBeginDrag(PointerEventData eventData)
     {
-        canvasGroup.blocksRaycasts = false; // 讓它拖曳時不擋到別的 UI
+        // ★ 如果沒開啟拖曳模式，就直接略過
+        if (!DragEnabled)
+            return;
+
+        canvasGroup.blocksRaycasts = false;
     }
 
     public void OnDrag(PointerEventData eventData)
     {
+        if (!DragEnabled)
+            return;
+
         if (canvas == null) return;
+
         RectTransformUtility.ScreenPointToLocalPointInRectangle(
             canvas.transform as RectTransform,
             eventData.position,
@@ -33,6 +44,9 @@ public class DraggableUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndD
 
     public void OnEndDrag(PointerEventData eventData)
     {
+        if (!DragEnabled)
+            return;
+
         canvasGroup.blocksRaycasts = true;
     }
 }
